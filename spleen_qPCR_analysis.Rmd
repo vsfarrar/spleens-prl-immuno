@@ -1,0 +1,181 @@
+---
+title: "Spleen immuno qPCR data"
+author: "Victoria Farrar"
+date: "9/2/2019"
+output: html_document
+---
+```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
+library(dplyr)
+library(tidyr)
+library(ggsignif)
+library(robust) #robust regression (lmRob)
+dat<-read.csv(file="~/Desktop/data/2019-08-30_qPCR_spleens_data_all_runs.csv") #spleen qPCR data
+dat$Sample<-as.factor(dat$Sample) 
+samp<-read.csv(file="~/Desktop/data/spleen_samples_key.csv") #Sample data with sex and stage, will be used for joins later
+samp$Sample<-as.factor(samp$Sample) 
+
+dat$cq_ACTB_v2[dat$cq_ACTB_v2 >33] <- NA  #ACTB_v2 Cq > 33 becomes NA
+dat$cq_rpL4[dat$cq_rpL4 >33] <- NA  #rpL4 Cq > 33 becomes NA
+dat$cq_PRLR[dat$cq_PRLR >35] <- NA #PRLR Cq >35 becomes NA
+dat$cq_GR[dat$cq_GR > 35] <-NA #GR Cq >35 becomes NA
+
+#using the unjoined data file, collapse mean across each triplicate. 
+cq_dat<- dat %>%
+    group_by(Sample) %>% 
+    summarise_at(vars(-Sample, -Well), funs(mean(., na.rm = TRUE)))
+
+cq_dat$ref_gene <- rowMeans(cq_dat[c('cq_ACTB_v2', 'cq_rpL4')], na.rm=TRUE) #mean is not that different from geometric mean for two numbers
+
+cq_dat$dCt_PRLR<- (cq_dat$cq_PRLR - cq_dat$ref_gene) #delta CT PRLR
+cq_dat$dCt_GR<-(cq_dat$cq_GR - cq_dat$ref_gene) #delta CT GR 
+
+#now join for stages and sex
+spln<-left_join(cq_dat, samp)
+
+control_PRLR<-mean(spln$dCt_PRLR[spln$stage=="lay"], na.rm = TRUE)
+control_GR<-mean(spln$dCt_GR[spln$stage=="lay"], na.rm = TRUE)
+
+spln$ddCt_PRLR<- (spln$dCt_PRLR - control_PRLR)
+spln$ddCt_GR<- (spln$dCt_GR - control_GR)
+
+spln$fold_PRLR<-2^-(spln$ddCt_PRLR)
+spln$fold_GR<-2^-(spln$ddCt_GR)
+
+
+range(spln$fold_PRLR, na.rm=TRUE) #returns the range of neg ddCT values. Lowest is -7.7. 
+#so, to get all values to be positive for log transformation, will add 8 to all and then log transform. 
+spln$log_fold_PRLR<-log((spln$fold_PRLR))
+
+range(spln$fold_GR, na.rm=TRUE) #returns the range of neg ddCT values. Lowest is -7.7. 
+#so, to get all values to be positive for log transformation, will add 8 to all and then log transform. 
+spln$log_fold_GR<-log((spln$fold_GR))
+
+hist(spln$fold_GR)
+hist(spln$log_fold_GR) #histograms show that we have a more normal distribution when log transformed
+hist(spln$fold_PRLR)
+hist(spln$log_fold_PRLR)
+
+
+#data cleaning
+spln<-subset(spln, stage != "n5")
+spln$stage<-factor(spln$stage, levels=c("lay","inc_d9", "hatch", "n9")) #manually re-orders stages
+```
+
+```{r, echo=FALSE, warning = FALSE, message = FALSE}
+#Investigating the Reference genes
+library(ggplot2)
+ggplot(spln, aes(x=stage, y=cq_ACTB_v2, fill=sex)) + 
+  geom_boxplot()
+ggplot(spln, aes(x=stage, y=cq_rpL4, fill=sex)) + 
+  geom_boxplot()
+
+m1<-lm(cq_rpL4~stage+sex, spln)
+anova(m1) #significant effect of sex on rpL4 cq values in the spleen ... 
+
+m2<-lm(cq_ACTB_v2~stage+sex, spln)
+anova(m2) #ACTB_v2 seems safe
+```
+```{r, echo=FALSE, warning = FALSE, message = FALSE}
+#given the above information, need to re-normalize our dCt values to ACTB_v2 only. 
+cq_dat2<-cq_dat[,1:5] #selects first 5 columns of cq_dat
+cq_dat2$dct_PRLR<-(cq_dat2$cq_PRLR - cq_dat2$cq_ACTB_v2) #normalize PRLR
+cq_dat2$dct_GR<-(cq_dat2$cq_GR - cq_dat2$cq_ACTB_v2) #normalize GR
+
+spln2<-left_join(cq_dat2, samp) #join again with new dataset
+
+control_PRLR_new<-mean(spln2$dct_PRLR[spln2$stage=="lay"], na.rm = TRUE)
+control_GR_new<-mean(spln2$dct_GR[spln2$stage=="lay"], na.rm = TRUE)
+
+spln2$ddct_PRLR<- (spln2$dct_PRLR - control_PRLR_new)
+spln2$ddct_GR<- (spln2$dct_GR - control_GR_new)
+
+spln2$fold_PRLR<-2^-(spln2$ddct_PRLR)
+spln2$fold_GR<-2^-(spln2$ddct_GR)
+spln2$log_fold_GR<-log((spln2$fold_GR))
+spln2$log_fold_PRLR<-log((spln2$fold_PRLR))
+
+#data cleaning
+spln2<-subset(spln2, stage != "n5")
+spln2$stage<-factor(spln2$stage, levels=c("lay","inc_d9", "hatch", "n9")) #manually re-orders stages
+
+#trimmed datset to remove large outliers
+spln2_trim<-subset(spln2, fold_PRLR <25)
+
+#sample size of trimmed
+aggregate(Sample~stage+sex, spln2_trim, length)
+```
+
+```{r,echo=FALSE, warning = FALSE, message = FALSE}
+
+#NEED TO MAKE A STATISTICAL CHOICE: keep outliers in, preserve sample size, and use robust regression. 
+#Or, trim obscene outliers and do regular glm 
+
+ggplot(spln2_trim, aes(x=stage, y=fold_PRLR, fill=sex)) + 
+  geom_boxplot()
+
+ggplot(spln2_trim, aes(x=stage, y=log_fold_PRLR, fill=sex)) + 
+  geom_boxplot()
+
+m1<-lm(log_fold_PRLR~stage+sex, spln2_trim)
+anova(m1)
+summary(m1)
+shapiro.test(m1$residuals) #non.sig., so can stay with general linear model w/ normally distributed residuals
+
+ggplot(spln2_trim, aes(x=stage, y=fold_GR, fill=sex)) + 
+  geom_boxplot()
+
+ggplot(spln2_trim, aes(x=stage, y=log_fold_GR, fill=sex)) + 
+  geom_boxplot()
+
+m2<-lm(log_fold_GR~stage+sex, spln2_trim)
+anova(m2)
+summary(m2)
+shapiro.test(m2$residuals) #non.sig. 
+
+```
+
+```{r, echo=FALSE, warning = FALSE, message = FALSE}
+#bar plots of stage only for PRLR 
+spln2_summary_prlr <- spln2_trim %>% 
+  group_by(stage,sex) %>%   # the grouping variable
+  summarise(mean_prlr = mean(log_fold_PRLR),  # calculates the mean of each group
+            sd_prlr = sd(log_fold_PRLR), # calculates the standard deviation of each group
+            n_prlr = n(),  # calculates the sample size per group
+            SE_prlr = sd(log_fold_PRLR)/sqrt(n())) # calculates the standard error of each group
+
+bp1<- ggplot(spln2_summary_prlr, aes(x=stage, y=mean_prlr, fill=sex)) + 
+        geom_bar(position=position_dodge(), stat="identity", color = "black") + 
+        geom_errorbar(aes(ymin=mean_prlr-SE_prlr, ymax=mean_prlr+SE_prlr),
+                  width=.2,                    # Width of the error bars
+                  position=position_dodge(.9)) + 
+        geom_signif(comparisons=list(c("lay", "hatch")), annotations="p = 0.02",
+              y_position = 1.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
+      geom_signif(comparisons=list(c("lay", "n9")), annotations="p = 0.02",
+              y_position = -1.5, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
+       scale_fill_manual(values=c("grey70", "maroon"))
+
+bp1 +  ggtitle("Spleen prolactin receptor expression") + labs(y=" (log(fold_change(PRLR))", x = "Stage") + theme_classic() + theme(plot.title = element_text(hjust = 0.5))
+
+#bar plots for GR
+spln2_summary_gr <- spln2_trim %>% 
+  group_by(stage,sex) %>%   # the grouping variable 
+  drop_na(log_fold_GR) %>%
+  summarise(mean_gr = mean(log_fold_GR),  # calculates the mean of each group
+            sd_gr = sd(log_fold_GR), # calculates the standard deviation of each group
+            n_gr = n(),  # calculates the sample size per group
+            SE_gr = sd(log_fold_GR)/sqrt(n())) # calculates the standard error of each group
+
+bp2<- ggplot(spln2_summary_gr, aes(x=stage, y=mean_gr, fill=sex)) + 
+        geom_bar(position=position_dodge(), stat="identity") + 
+        geom_errorbar(aes(ymin=mean_gr-SE_gr, ymax=mean_gr+SE_gr),
+                  width=.2,                    # Width of the error bars
+                  position=position_dodge(.9)) + 
+       scale_color_manual(values=c("grey40", "maroon"))
+
+print(bp2)
+bp2 +  ggtitle("Spleen GR expression") + labs(y=" (log(fold_change(GR)) ± S.E.)", x = "Stage") + theme_classic() 
+```
+
+
+###Resources used: 
+https://stackoverflow.com/questions/25003114/r-merge-a-particular-column-from-one-data-frame-to-another-according-to-its-refe
