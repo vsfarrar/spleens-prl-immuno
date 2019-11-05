@@ -5,11 +5,15 @@ date: "9/2/2019, updated 11/5/19"
 output: html_document
 ---
 ```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("ggsignif")) install.packages("ggsignif")
+if (!require("robust")) install.packages("robust")
 library(dplyr)
 library(tidyr)
 library(ggsignif)
 library(robust) #robust regression (lmRob)
 dat<-read.csv(file="~/Desktop/data/2019-08-30_qPCR_spleens_data_all_runs.csv") #spleen qPCR data
+dat<-read.csv(file = file.choose())
 dat$Sample<-as.factor(dat$Sample) 
 samp<-read.csv(file="~/Desktop/data/spleen_samples_key.csv") #Sample data with sex and stage, will be used for joins later
 samp$Sample<-as.factor(samp$Sample) 
