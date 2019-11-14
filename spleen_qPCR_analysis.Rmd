@@ -5,6 +5,7 @@ date: "9/2/2019, updated 11/5/19"
 output: html_document
 ---
 ```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
+#code now installs required packages 
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("ggsignif")) install.packages("ggsignif")
 if (!require("robust")) install.packages("robust")
@@ -12,8 +13,8 @@ library(dplyr)
 library(tidyr)
 library(ggsignif)
 library(robust) #robust regression (lmRob)
-dat<-read.csv(file="~/Desktop/data/2019-08-30_qPCR_spleens_data_all_runs.csv") #spleen qPCR data
-dat<-read.csv(file = file.choose())
+
+dat<-read.csv(file="~/Desktop/data/2019-11-14_qPCR_spleens_data_all_runs.csv") #spleen qPCR data
 dat$Sample<-as.factor(dat$Sample) 
 samp<-read.csv(file="~/Desktop/data/spleen_samples_key.csv") #Sample data with sex and stage, will be used for joins later
 samp$Sample<-as.factor(samp$Sample) 
@@ -22,6 +23,7 @@ dat$cq_ACTB_v2[dat$cq_ACTB_v2 >33] <- NA  #ACTB_v2 Cq > 33 becomes NA
 dat$cq_rpL4[dat$cq_rpL4 >33] <- NA  #rpL4 Cq > 33 becomes NA
 dat$cq_PRLR[dat$cq_PRLR >35] <- NA #PRLR Cq >35 becomes NA
 dat$cq_GR[dat$cq_GR > 35] <-NA #GR Cq >35 becomes NA
+dat$cq_MR[dat$cq_MR > 35] <-NA #MR Cq >35 becomes NA
 
 #using the unjoined data file, collapse mean across each triplicate. 
 cq_dat<- dat %>%
@@ -32,27 +34,35 @@ cq_dat$ref_gene <- rowMeans(cq_dat[c('cq_ACTB_v2', 'cq_rpL4')], na.rm=TRUE) #mea
 
 cq_dat$dCt_PRLR<- (cq_dat$cq_PRLR - cq_dat$ref_gene) #delta CT PRLR
 cq_dat$dCt_GR<-(cq_dat$cq_GR - cq_dat$ref_gene) #delta CT GR 
+cq_dat$dCt_MR<-(cq_dat$cq_MR - cq_dat$ref_gene) #delta CT MR
 
 #now join for stages and sex
 spln<-left_join(cq_dat, samp)
 
 control_PRLR<-mean(spln$dCt_PRLR[spln$stage=="lay"], na.rm = TRUE)
 control_GR<-mean(spln$dCt_GR[spln$stage=="lay"], na.rm = TRUE)
+control_MR<-mean(spln$dCt_MR[spln$stage=="lay"], na.rm = TRUE)
 
 spln$ddCt_PRLR<- (spln$dCt_PRLR - control_PRLR)
 spln$ddCt_GR<- (spln$dCt_GR - control_GR)
+spln$ddCt_MR<- (spln$dCt_MR - control_MR)
 
 spln$fold_PRLR<-2^-(spln$ddCt_PRLR)
 spln$fold_GR<-2^-(spln$ddCt_GR)
+spln$fold_MR<-2^-(spln$ddCt_MR)
 
 
 range(spln$fold_PRLR, na.rm=TRUE) #returns the range of neg ddCT values. Lowest is -7.7. 
 #so, to get all values to be positive for log transformation, will add 8 to all and then log transform. 
 spln$log_fold_PRLR<-log((spln$fold_PRLR))
 
-range(spln$fold_GR, na.rm=TRUE) #returns the range of neg ddCT values. Lowest is -7.7. 
-#so, to get all values to be positive for log transformation, will add 8 to all and then log transform. 
+range(spln$fold_GR, na.rm=TRUE) #range of neg ddCT values for GR 
 spln$log_fold_GR<-log((spln$fold_GR))
+
+range(spln$fold_MR, na.rm=TRUE)
+hist(spln$fold_MR)
+spln$log_fold_MR <-log(spln$fold_MR)
+hist(spln$log_fold_MR)
 
 hist(spln$fold_GR)
 hist(spln$log_fold_GR) #histograms show that we have a more normal distribution when log transformed
@@ -79,24 +89,31 @@ anova(m1) #significant effect of sex on rpL4 cq values in the spleen ...
 m2<-lm(cq_ACTB_v2~stage+sex, spln)
 anova(m2) #ACTB_v2 seems safe
 ```
+
+
 ```{r, echo=FALSE, warning = FALSE, message = FALSE}
 #given the above information, need to re-normalize our dCt values to ACTB_v2 only. 
-cq_dat2<-cq_dat[,1:5] #selects first 5 columns of cq_dat
+cq_dat2<-cq_dat[,1:6] #selects first 5 columns of cq_dat
 cq_dat2$dct_PRLR<-(cq_dat2$cq_PRLR - cq_dat2$cq_ACTB_v2) #normalize PRLR
 cq_dat2$dct_GR<-(cq_dat2$cq_GR - cq_dat2$cq_ACTB_v2) #normalize GR
+cq_dat2$dct_MR<-(cq_dat2$cq_MR - cq_dat2$cq_ACTB_v2) #normalize MR to just ACTB_v2
 
 spln2<-left_join(cq_dat2, samp) #join again with new dataset
 
 control_PRLR_new<-mean(spln2$dct_PRLR[spln2$stage=="lay"], na.rm = TRUE)
 control_GR_new<-mean(spln2$dct_GR[spln2$stage=="lay"], na.rm = TRUE)
+control_MR_new<-mean(spln2$dct_MR[spln2$stage=="lay"], na.rm = TRUE)
 
 spln2$ddct_PRLR<- (spln2$dct_PRLR - control_PRLR_new)
 spln2$ddct_GR<- (spln2$dct_GR - control_GR_new)
+spln2$ddct_MR<- (spln2$dct_MR - control_MR_new)
 
 spln2$fold_PRLR<-2^-(spln2$ddct_PRLR)
 spln2$fold_GR<-2^-(spln2$ddct_GR)
+spln2$fold_MR<-2^-(spln2$ddct_MR)
 spln2$log_fold_GR<-log((spln2$fold_GR))
 spln2$log_fold_PRLR<-log((spln2$fold_PRLR))
+spln2$log_fold_MR<-log((spln2$fold_MR))
 
 #data cleaning
 spln2<-subset(spln2, stage != "n5")
@@ -140,6 +157,8 @@ shapiro.test(m2$residuals) #non.sig.
 
 ```{r, echo=FALSE, warning = FALSE, message = FALSE}
 #bar plots of stage only for PRLR 
+
+#create a summary statistics dataset for PRLR
 spln2_summary_prlr <- spln2_trim %>% 
   group_by(stage,sex) %>%   # the grouping variable
   summarise(mean_prlr = mean(log_fold_PRLR),  # calculates the mean of each group
@@ -147,12 +166,14 @@ spln2_summary_prlr <- spln2_trim %>%
             n_prlr = n(),  # calculates the sample size per group
             SE_prlr = sd(log_fold_PRLR)/sqrt(n())) # calculates the standard error of each group
 
+
+#ggplot code using summary statistics from above dataset (sprln2_summary_prlr)
 bp1<- ggplot(spln2_summary_prlr, aes(x=stage, y=mean_prlr, fill=sex)) + 
         geom_bar(position=position_dodge(), stat="identity", color = "black") + 
         geom_errorbar(aes(ymin=mean_prlr-SE_prlr, ymax=mean_prlr+SE_prlr),
                   width=.2,                    # Width of the error bars
                   position=position_dodge(.9)) + 
-        geom_signif(comparisons=list(c("lay", "hatch")), annotations="p = 0.02",
+        geom_signif(comparisons=list(c("lay", "hatch")), annotations="p = 0.02",   #geom_signif are significance bars from the model
               y_position = 1.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
       geom_signif(comparisons=list(c("lay", "n9")), annotations="p = 0.02",
               y_position = -1.5, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
