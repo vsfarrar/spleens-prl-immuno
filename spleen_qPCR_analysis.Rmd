@@ -1,19 +1,15 @@
 ---
 title: "Spleen immuno qPCR data"
 author: "Victoria Farrar"
-date: "9/2/2019, updated 11/5/19"
+date: "9/2/2019"
 output: html_document
 ---
-```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
-#code now installs required packages 
-if (!require("tidyverse")) install.packages("tidyverse")
-if (!require("ggsignif")) install.packages("ggsignif")
-if (!require("robust")) install.packages("robust")
+```{r}
 library(dplyr)
 library(tidyr)
-library(ggsignif)
+library(stringr)
 library(robust) #robust regression (lmRob)
-
+library(ggsignif)
 dat<-read.csv(file="~/Desktop/data/2019-11-14_qPCR_spleens_data_all_runs.csv") #spleen qPCR data
 dat$Sample<-as.factor(dat$Sample) 
 samp<-read.csv(file="~/Desktop/data/spleen_samples_key.csv") #Sample data with sex and stage, will be used for joins later
@@ -23,46 +19,37 @@ dat$cq_ACTB_v2[dat$cq_ACTB_v2 >33] <- NA  #ACTB_v2 Cq > 33 becomes NA
 dat$cq_rpL4[dat$cq_rpL4 >33] <- NA  #rpL4 Cq > 33 becomes NA
 dat$cq_PRLR[dat$cq_PRLR >35] <- NA #PRLR Cq >35 becomes NA
 dat$cq_GR[dat$cq_GR > 35] <-NA #GR Cq >35 becomes NA
-dat$cq_MR[dat$cq_MR > 35] <-NA #MR Cq >35 becomes NA
 
 #using the unjoined data file, collapse mean across each triplicate. 
 cq_dat<- dat %>%
     group_by(Sample) %>% 
-    summarise_at(vars(-Sample, -Well), funs(mean(., na.rm = TRUE)))
+    summarise_at(vars(cq_ACTB_v2:cq_MR), funs(mean(., na.rm = TRUE)))
 
 cq_dat$ref_gene <- rowMeans(cq_dat[c('cq_ACTB_v2', 'cq_rpL4')], na.rm=TRUE) #mean is not that different from geometric mean for two numbers
 
 cq_dat$dCt_PRLR<- (cq_dat$cq_PRLR - cq_dat$ref_gene) #delta CT PRLR
 cq_dat$dCt_GR<-(cq_dat$cq_GR - cq_dat$ref_gene) #delta CT GR 
-cq_dat$dCt_MR<-(cq_dat$cq_MR - cq_dat$ref_gene) #delta CT MR
 
 #now join for stages and sex
 spln<-left_join(cq_dat, samp)
 
 control_PRLR<-mean(spln$dCt_PRLR[spln$stage=="lay"], na.rm = TRUE)
 control_GR<-mean(spln$dCt_GR[spln$stage=="lay"], na.rm = TRUE)
-control_MR<-mean(spln$dCt_MR[spln$stage=="lay"], na.rm = TRUE)
 
 spln$ddCt_PRLR<- (spln$dCt_PRLR - control_PRLR)
 spln$ddCt_GR<- (spln$dCt_GR - control_GR)
-spln$ddCt_MR<- (spln$dCt_MR - control_MR)
 
 spln$fold_PRLR<-2^-(spln$ddCt_PRLR)
 spln$fold_GR<-2^-(spln$ddCt_GR)
-spln$fold_MR<-2^-(spln$ddCt_MR)
 
 
 range(spln$fold_PRLR, na.rm=TRUE) #returns the range of neg ddCT values. Lowest is -7.7. 
 #so, to get all values to be positive for log transformation, will add 8 to all and then log transform. 
 spln$log_fold_PRLR<-log((spln$fold_PRLR))
 
-range(spln$fold_GR, na.rm=TRUE) #range of neg ddCT values for GR 
+range(spln$fold_GR, na.rm=TRUE) #returns the range of neg ddCT values. Lowest is -7.7. 
+#so, to get all values to be positive for log transformation, will add 8 to all and then log transform. 
 spln$log_fold_GR<-log((spln$fold_GR))
-
-range(spln$fold_MR, na.rm=TRUE)
-hist(spln$fold_MR)
-spln$log_fold_MR <-log(spln$fold_MR)
-hist(spln$log_fold_MR)
 
 hist(spln$fold_GR)
 hist(spln$log_fold_GR) #histograms show that we have a more normal distribution when log transformed
@@ -75,7 +62,7 @@ spln<-subset(spln, stage != "n5")
 spln$stage<-factor(spln$stage, levels=c("lay","inc_d9", "hatch", "n9")) #manually re-orders stages
 ```
 
-```{r, echo=FALSE, warning = FALSE, message = FALSE}
+```{r}
 #Investigating the Reference genes
 library(ggplot2)
 ggplot(spln, aes(x=stage, y=cq_ACTB_v2, fill=sex)) + 
@@ -89,14 +76,12 @@ anova(m1) #significant effect of sex on rpL4 cq values in the spleen ...
 m2<-lm(cq_ACTB_v2~stage+sex, spln)
 anova(m2) #ACTB_v2 seems safe
 ```
-
-
-```{r, echo=FALSE, warning = FALSE, message = FALSE}
+```{r}
 #given the above information, need to re-normalize our dCt values to ACTB_v2 only. 
 cq_dat2<-cq_dat[,1:6] #selects first 5 columns of cq_dat
 cq_dat2$dct_PRLR<-(cq_dat2$cq_PRLR - cq_dat2$cq_ACTB_v2) #normalize PRLR
 cq_dat2$dct_GR<-(cq_dat2$cq_GR - cq_dat2$cq_ACTB_v2) #normalize GR
-cq_dat2$dct_MR<-(cq_dat2$cq_MR - cq_dat2$cq_ACTB_v2) #normalize MR to just ACTB_v2
+cq_dat2$dct_MR<-(cq_dat2$cq_MR - cq_dat2$cq_ACTB_v2)#normalize MR
 
 spln2<-left_join(cq_dat2, samp) #join again with new dataset
 
@@ -107,6 +92,7 @@ control_MR_new<-mean(spln2$dct_MR[spln2$stage=="lay"], na.rm = TRUE)
 spln2$ddct_PRLR<- (spln2$dct_PRLR - control_PRLR_new)
 spln2$ddct_GR<- (spln2$dct_GR - control_GR_new)
 spln2$ddct_MR<- (spln2$dct_MR - control_MR_new)
+
 
 spln2$fold_PRLR<-2^-(spln2$ddct_PRLR)
 spln2$fold_GR<-2^-(spln2$ddct_GR)
@@ -126,7 +112,7 @@ spln2_trim<-subset(spln2, fold_PRLR <25)
 aggregate(Sample~stage+sex, spln2_trim, length)
 ```
 
-```{r,echo=FALSE, warning = FALSE, message = FALSE}
+```{r}
 
 #NEED TO MAKE A STATISTICAL CHOICE: keep outliers in, preserve sample size, and use robust regression. 
 #Or, trim obscene outliers and do regular glm 
@@ -134,8 +120,6 @@ aggregate(Sample~stage+sex, spln2_trim, length)
 ggplot(spln2_trim, aes(x=stage, y=fold_PRLR, fill=sex)) + 
   geom_boxplot()
 
-ggplot(spln2_trim, aes(x=stage, y=log_fold_PRLR, fill=sex)) + 
-  geom_boxplot()
 
 m1<-lm(log_fold_PRLR~stage+sex, spln2_trim)
 anova(m1)
@@ -155,10 +139,8 @@ shapiro.test(m2$residuals) #non.sig.
 
 ```
 
-```{r, echo=FALSE, warning = FALSE, message = FALSE}
+```{r}
 #bar plots of stage only for PRLR 
-
-#create a summary statistics dataset for PRLR
 spln2_summary_prlr <- spln2_trim %>% 
   group_by(stage,sex) %>%   # the grouping variable
   summarise(mean_prlr = mean(log_fold_PRLR),  # calculates the mean of each group
@@ -166,20 +148,14 @@ spln2_summary_prlr <- spln2_trim %>%
             n_prlr = n(),  # calculates the sample size per group
             SE_prlr = sd(log_fold_PRLR)/sqrt(n())) # calculates the standard error of each group
 
-
-#ggplot code using summary statistics from above dataset (sprln2_summary_prlr)
 bp1<- ggplot(spln2_summary_prlr, aes(x=stage, y=mean_prlr, fill=sex)) + 
-        geom_bar(position=position_dodge(), stat="identity", color = "black") + 
+        geom_bar(position=position_dodge(), stat="identity") + 
         geom_errorbar(aes(ymin=mean_prlr-SE_prlr, ymax=mean_prlr+SE_prlr),
                   width=.2,                    # Width of the error bars
-                  position=position_dodge(.9)) + 
-        geom_signif(comparisons=list(c("lay", "hatch")), annotations="p = 0.02",   #geom_signif are significance bars from the model
-              y_position = 1.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
-      geom_signif(comparisons=list(c("lay", "n9")), annotations="p = 0.02",
-              y_position = -1.5, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
-       scale_fill_manual(values=c("grey70", "maroon"))
+                  position=position_dodge(.9))
 
-bp1 +  ggtitle("Spleen prolactin receptor expression") + labs(y=" (log(fold_change(PRLR))", x = "Stage") + theme_classic() + theme(plot.title = element_text(hjust = 0.5))
+print(bp1)
+bp1 +  ggtitle("Spleen prolactin receptor expression") + labs(y=" (log(fold_change(PRLR)) ± S.E.)", x = "Stage") + theme_classic() 
 
 #bar plots for GR
 spln2_summary_gr <- spln2_trim %>% 
@@ -194,12 +170,161 @@ bp2<- ggplot(spln2_summary_gr, aes(x=stage, y=mean_gr, fill=sex)) +
         geom_bar(position=position_dodge(), stat="identity") + 
         geom_errorbar(aes(ymin=mean_gr-SE_gr, ymax=mean_gr+SE_gr),
                   width=.2,                    # Width of the error bars
-                  position=position_dodge(.9)) + 
-       scale_color_manual(values=c("grey40", "maroon"))
+                  position=position_dodge(.9))
 
 print(bp2)
 bp2 +  ggtitle("Spleen GR expression") + labs(y=" (log(fold_change(GR)) ± S.E.)", x = "Stage") + theme_classic() 
 ```
+
+```{r boxplots 4 SICB}
+#FOR SICB POSTER 
+
+#PRLR boxplots
+ggplot(spln2_trim, aes(x=stage, y=log_fold_PRLR, fill=sex)) + 
+  geom_point(aes(color = sex), position = position_dodge(0.9), size = 2)+ 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA)+ 
+  scale_color_manual(name = "Sex", values = c("gray50", "maroon"))+ 
+  scale_fill_manual(name = "Sex", values = c("gray70", "maroon"))+
+  geom_signif(comparisons=list(c("lay", "hatch")), annotations="p = 0.02",   #geom_signif are significance bars from the model
+              y_position = 2.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
+  geom_signif(comparisons=list(c("lay", "n9")), annotations="p = 0.02",
+              y_position = -3, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
+  labs(x = "Stage", y= "PRLR expression\nlog(fold change)")+
+  theme_classic()+
+  theme(text = element_text(size= 15))
+```
+
+```{r MR:GR ratio}
+spln2$MR_GR<- (spln2$fold_MR / spln2$fold_GR) #create MR_GR ratio
+spln2$log_MRGR<-log(spln2$MR_GR) #create log MR_GR ratio
+
+#MR GR boxplots
+ggplot(spln2, aes(x=stage, y=log_MRGR, fill=sex)) + 
+  geom_point(aes(color = sex), position = position_dodge(0.9), size = 2)+ 
+  geom_boxplot(alpha = 0.5, outlier.shape = NA)+ 
+  scale_color_manual(name= "Sex", values = c("gray50", "maroon"))+ 
+  scale_fill_manual(name="Sex",values = c("gray70", "maroon"))+
+  geom_hline(yintercept=0, alpha = 0.25)+
+  geom_signif(comparisons=list(c("inc_d9", "hatch")), annotations="p = 0.02",   #geom_signif are significance bars from the model
+              y_position = 2.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
+  geom_signif(comparisons=list(c("inc_d9", "n9")), annotations="p < 0.01",
+              y_position = -3.5, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
+  labs(x = "Stage", y= "Log MR:GR expression ratio")+
+  annotate("text", x = 4, y = -4, label = "MR < GR ", size=5)+
+  annotate("text", x = 4, y = 4, label = "MR > GR ", size=5)+
+  theme_classic()+
+  theme(text = element_text(size= 15))
+
+
+#model for MR:GR ratio
+m3<-lm(log_MRGR~stage+sex, spln2)
+anova(m3)
+summary(m3)
+shapiro.test(m3$residuals) #non.sig.   #lay vs n9 0.055 trend. #inc_d9 vs hatch 0.02, #inc_d9 vs n9 0.008
+
+```
+
+```{r hormone correlations}
+sampkey<-read.csv("~/Downloads/spleen_samples_key2.csv") #import sample key
+
+#create a clean_id variable for band combinations in sample key
+sampkey$clean_id<-str_replace_all(sampkey$Band.Combo, "x", "") #remove meaningless "x" from band combos
+sampkey$clean_id<-str_replace_all(sampkey$clean_id, "[[:punct:]]", "") #remove punctuation
+
+#import plasma prolactin dataset
+plasma<-read.csv("~/Desktop/data/prolactin_ria_data.csv") 
+
+#create clean_id variable in that dataset 
+plasma$clean_id<-str_replace_all(plasma$ColorBands, "x", "")
+plasma$clean_id<-str_replace_all(plasma$clean_id,"[[:punct:]]", "" )
+
+#join the imported joined data with the original prl.long to preserve all data columns (e.g. manip, etc)
+samp.join<-left_join(sampkey,spln2, by=c("Sample"))
+horm.join<-left_join(samp.join, plasma, by=c("clean_id"))
+
+#plot correlation
+#(scatterplot for hyp, prl, joined data) = sp.h.pr.j
+prl_vs_prlr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_fold_PRLR, x = Prolactin.ng.mL, color=stage, shape=stage))+
+           geom_point(size = 3)+
+          geom_smooth(method=lm, na.rm = TRUE, fullrange= TRUE,
+              aes(group=1),colour="black") + 
+          labs(x="Plasma prolactin concentration (ng/mL)", 
+               y="PRLR expression \n(log(fold change))")+
+          annotate("text", x = 75, y = -2.5, label = "R2= -0.02, N.S.", size=5)+
+          theme_classic()+
+          theme(text = element_text(size=15))+
+           guides(color=guide_legend(title="Stage"),shape=guide_legend(title="Stage"))
+
+
+prl_vs_prlr
+
+#statistical correlations (R2)
+corr_prl_vs_prlr<- lm(log_fold_PRLR~Prolactin.ng.mL, horm.join) #use lm as it gives R2 
+summary(corr_prl_vs_prlr)
+
+#(scatterplot for gr and prolactin also) 
+prl_vs_mrgr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_MRGR, x = Prolactin.ng.mL, color=stage, shape=stage))+
+           geom_point(size = 3)+
+          geom_smooth(method=lm, na.rm = TRUE, fullrange= TRUE,
+              aes(group=1),colour="black") + 
+          labs(x="Plasma prolactin concentration (ng/mL)", 
+               y="MR:GR expression ratio \n(log(fold change))")+
+          annotate("text", x = 75, y = -4, label = "R2= -0.02, N.S.", size=5)+
+          theme_classic()+
+         theme(text = element_text(size=15))+
+        guides(color=guide_legend(title="Stage"),shape=guide_legend(title="Stage"))
+
+
+prl_vs_mrgr
+
+corr_prl_vs_mrgr<- lm(log_MRGR~Prolactin.ng.mL, horm.join) #use lm as it gives R2 
+summary(corr_prl_vs_mrgr)
+
+prl_vs_gr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_fold_GR, x = Prolactin.ng.mL, color=stage, shape=stage))+
+           geom_point(size = 3)+
+          geom_smooth(method=lm, na.rm = TRUE, fullrange= TRUE,
+              aes(group=1),colour="black") + 
+          labs(x="Plasma prolactin concentration (ng/mL)", 
+               y="GR expression \n(log(fold change))")+
+          annotate("text", x = 75, y = -4, label = "R2= -0.02, N.S.", size=5)+
+          theme_classic()+
+         theme(text = element_text(size=15))
+
+prl_vs_gr
+
+corr_prl_vs_gr<- lm(log_fold_GR~Prolactin.ng.mL, horm.join) #use lm as it gives R2 
+summary(corr_prl_vs_gr)
+
+prl_vs_mr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_fold_MR, x = Prolactin.ng.mL, color=stage, shape=stage))+
+           geom_point(size = 3)+
+          geom_smooth(method=lm, na.rm = TRUE, fullrange= TRUE,
+              aes(group=1),colour="black") + 
+          labs(x="Plasma prolactin concentration (ng/mL)", 
+               y="MR expression \n(log(fold change))")+
+          annotate("text", x = 75, y = -4, label = "R2= 0.01, N.S.", size=5)+
+          theme_classic()+
+         theme(text = element_text(size=15)) + 
+        guides(color=guide_legend(title="Stage"),shape=guide_legend(title="Stage"))
+
+prl_vs_mr
+
+corr_prl_vs_mr<- lm(log_fold_MR~Prolactin.ng.mL, horm.join) #use lm as it gives R2 
+summary(corr_prl_vs_mr)
+
+```
+```{r}
+library(cowplot)
+corr.legend <- get_legend(prl_vs_mr) #extract legend (both have same legend)
+corr.MRGR.plots<-plot_grid(
+  prl_vs_gr + theme(text=element_text(size=12),legend.position="none"), 
+  prl_vs_mr + theme(text = element_text(size=12),legend.position="none"),
+    labels = c("A", "B","C","D"), #adds letters
+    align = "hv") 
+corr.figs <- plot_grid(corr.MRGR.plots, corr.legend, rel_widths = c(7,1))
+
+corr.figs
+```
+
 
 
 ###Resources used: 
