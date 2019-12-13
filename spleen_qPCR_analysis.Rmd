@@ -60,6 +60,7 @@ hist(spln$log_fold_PRLR)
 #data cleaning
 spln<-subset(spln, stage != "n5")
 spln$stage<-factor(spln$stage, levels=c("lay","inc_d9", "hatch", "n9")) #manually re-orders stages
+
 ```
 
 ```{r}
@@ -105,11 +106,14 @@ spln2$log_fold_MR<-log((spln2$fold_MR))
 spln2<-subset(spln2, stage != "n5")
 spln2$stage<-factor(spln2$stage, levels=c("lay","inc_d9", "hatch", "n9")) #manually re-orders stages
 
+spln2 <- spln2[!spln$Sample == "ID389",] #this sample is an error, needs to be omitted
+spln2 <- spln2[-c(23), ] #remove duplicate sample
+
 #trimmed datset to remove large outliers
 spln2_trim<-subset(spln2, fold_PRLR <25)
 
 #sample size of trimmed
-aggregate(Sample~stage+sex, spln2_trim, length)
+aggregate(Sample~stage+sex, spln2, length)
 ```
 
 ```{r}
