@@ -213,9 +213,9 @@ ggplot(spln2, aes(x=stage, y=log_MRGR, fill=sex)) +
   scale_fill_manual(name="Sex",values = c("gray70", "maroon"))+
   geom_hline(yintercept=0, alpha = 0.25)+
   geom_signif(comparisons=list(c("inc_d9", "hatch")), annotations="p = 0.02",   #geom_signif are significance bars from the model
-              y_position = 2.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
+              y_position = -4, tip_length = -0.05, vjust = 0, color="black", textsize = 5 ) + 
   geom_signif(comparisons=list(c("inc_d9", "n9")), annotations="p < 0.01",
-              y_position = -3.5, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
+              y_position = 2.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 )+
   labs(x = "Stage", y= "Log MR:GR expression ratio")+
   annotate("text", x = 4, y = -4, label = "MR < GR ", size=5)+
   annotate("text", x = 4, y = 4, label = "MR > GR ", size=5)+
