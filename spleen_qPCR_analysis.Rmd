@@ -125,10 +125,15 @@ ggplot(spln2_trim, aes(x=stage, y=fold_PRLR, fill=sex)) +
   geom_boxplot()
 
 
-m1<-lm(log_fold_PRLR~stage+sex, spln2_trim)
+m1<-lm(log_fold_PRLR~stage*sex, spln2_trim)
 anova(m1)
 summary(m1)
-shapiro.test(m1$residuals) #non.sig., so can stay with general linear model w/ normally distributed residuals
+shapiro.test(m1$residuals) #significantly non-normal 
+
+library(robust)
+mrob_prlr<-lmRob(log_fold_PRLR ~ stage + sex, spln2_trim)
+anova.lmRob(mrob_prlr)
+summary(mrob_prlr)
 
 ggplot(spln2_trim, aes(x=stage, y=fold_GR, fill=sex)) + 
   geom_boxplot()
@@ -189,10 +194,8 @@ ggplot(spln2_trim, aes(x=stage, y=log_fold_PRLR, fill=sex)) +
   geom_boxplot(alpha = 0.5, outlier.shape = NA)+ 
   scale_color_manual(name = "Sex", values = c("gray50", "maroon"))+ 
   scale_fill_manual(name = "Sex", values = c("gray70", "maroon"))+
-  geom_signif(comparisons=list(c("lay", "hatch")), annotations="p = 0.02",   #geom_signif are significance bars from the model
-              y_position = 2.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 ) + 
   geom_signif(comparisons=list(c("lay", "n9")), annotations="p = 0.02",
-              y_position = -3, tip_length = -0.05, vjust = 0, color="black", textsize = 5 )+
+              y_position = 2.75, tip_length = 0.05, vjust = 0, color="black", textsize = 5 )+
   labs(x = "Stage", y= "PRLR expression\nlog(fold change)")+
   theme_classic()+
   theme(text = element_text(size= 15))
@@ -224,8 +227,14 @@ ggplot(spln2, aes(x=stage, y=log_MRGR, fill=sex)) +
 m3<-lm(log_MRGR~stage+sex, spln2)
 anova(m3)
 summary(m3)
-shapiro.test(m3$residuals) #non.sig.   #lay vs n9 0.055 trend. #inc_d9 vs hatch 0.02, #inc_d9 vs n9 0.008
+shapiro.test(m3$residuals) #SIG.
+#lay vs n9 0.055 trend. #inc_d9 vs hatch 0.02, #inc_d9 vs n9 0.008
 
+mrob_mrgr<-lmRob(log_MRGR~stage + sex, spln2)
+anova.lmRob(mrob_mrgr)
+summary(mrob_mrgr)
+
+spln2$stage<-relevel(spln2$stage, "lay")
 ```
 
 ```{r hormone correlations}
@@ -247,14 +256,13 @@ samp.join<-left_join(sampkey,spln2, by=c("Sample"))
 horm.join<-left_join(samp.join, plasma, by=c("clean_id"))
 
 #plot correlation
-#(scatterplot for hyp, prl, joined data) = sp.h.pr.j
 prl_vs_prlr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_fold_PRLR, x = Prolactin.ng.mL, color=stage, shape=stage))+
            geom_point(size = 3)+
           geom_smooth(method=lm, na.rm = TRUE, fullrange= TRUE,
               aes(group=1),colour="black") + 
           labs(x="Plasma prolactin concentration (ng/mL)", 
                y="PRLR expression \n(log(fold change))")+
-          annotate("text", x = 75, y = -2.5, label = "R2= -0.02, N.S.", size=5)+
+          annotate("text", x = 75, y = -2.5, label = "r =  -0.012, N.S.", size=5)+
           theme_classic()+
           theme(text = element_text(size=15))+
            guides(color=guide_legend(title="Stage"),shape=guide_legend(title="Stage"))
@@ -266,6 +274,15 @@ prl_vs_prlr
 corr_prl_vs_prlr<- lm(log_fold_PRLR~Prolactin.ng.mL, horm.join) #use lm as it gives R2 
 summary(corr_prl_vs_prlr)
 
+#pearsons' r for prlr
+cor.test(horm.join$log_fold_PRLR, horm.join$Prolactin.ng.mL, method=c("pearson", "kendall", "spearman"))
+
+
+#pearsons' r for MRGR
+cor.test(horm.join$log_MRGR, horm.join$Prolactin.ng.mL, method=c("pearson", "kendall", "spearman"))
+
+
+
 #(scatterplot for gr and prolactin also) 
 prl_vs_mrgr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_MRGR, x = Prolactin.ng.mL, color=stage, shape=stage))+
            geom_point(size = 3)+
@@ -273,7 +290,7 @@ prl_vs_mrgr<- horm.join %>% drop_na(stage) %>% ggplot(aes(y = log_MRGR, x = Prol
               aes(group=1),colour="black") + 
           labs(x="Plasma prolactin concentration (ng/mL)", 
                y="MR:GR expression ratio \n(log(fold change))")+
-          annotate("text", x = 75, y = -4, label = "R2= -0.02, N.S.", size=5)+
+          annotate("text", x = 75, y = -4, label = "r = -0.22, N.S.", size=5)+
           theme_classic()+
          theme(text = element_text(size=15))+
         guides(color=guide_legend(title="Stage"),shape=guide_legend(title="Stage"))
